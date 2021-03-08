@@ -1,0 +1,25 @@
+Content-Type: multipart/mixed; boundary="//"
+MIME-Version: 1.0
+
+--//
+Content-Type: text/cloud-config; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="cloud-config.txt"
+
+#cloud-config
+cloud_final_modules:
+- [scripts-user, always]
+
+--//
+Content-Type: text/x-shellscript; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="userdata.txt"
+
+#cloud-boothook
+#!/bin/bash
+/home/ec2-user/confluent-5.3.1/bin/kafka-rest-start /home/ec2-user/confluent-5.3.1/etc/kafka-rest/kafka-rest.properties
+/home/ec2-user/apache-jmeter-5.4.1/bin/jmeter.sh -n -t /home/ec2-user/apache-jmeter-5.4.1/bin/msk_json_load.jmx
+/home/ec2-user/kafka_2.12-2.2.1/bin/kafka-console-consumer.sh --bootstrap-server b-1.dxlmskstreaming.6dbnb9.c3.kafka.us-east-1.amazonaws.com:9094,b-2.dxlmskstreaming.6dbnb9.c3.kafka.us-east-1.amazonaws.com:9094 --consumer.config /home/ec2-user/kafka_2.12-2.2.1/bin/client.properties --topic TestData0001 --from-beginning
+--//
