@@ -1,108 +1,68 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "PoC Stack for Managed Kafka Streaming"
+Description: "PoC Stack for Managed Kafka Clients"
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
-          Detault: Debugging (optional)
           Parameters:
-            - EnableBastionHost
             - KeyPair
+            - MinSize
+            - MaxSize
+            - DesiredCapacity
 
 Parameters:
   ProjectName:
     Type: String
     Description: Project Name
 
-  MSKKafkaVersion:
-    Type: String
-    Description: Kafka version
-    Default: 2.3.1
-    AllowedValues:
-      - 2.2.1
-      - 2.3.1
-      - 2.4.1.1
-      - 2.5.1
-      - 2.6.0
-      - 2.6.1
-      - 2.7.0
-
-  MSKInstanceType:
-    Type: String
-    Description: Instance type
-    Default: kafka.t3.small
-    AllowedValues:
-      - kafka.t3.small
-      - kafka.m5.large
-
-  TLSMutualAuthentication:
-    Type: String
-    Default: false
-    Description: Enable TLS Mutual Authentication for this cluster.
-    AllowedValues:
-      - true
-      - false
-
-  PCAARN:
-    Type: String
-    AllowedPattern: 'arn:aws:acm-pca:[us\-east\-1|us\-east\-2|eu\-west\-1]{9}:\d{12}:certificate-authority\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}|^$'
-    ConstraintDescription: Not a Valid ACM PCA ARN
-    Description: Provide the ARN for an ACM PCA in your account
-
   EC2Ami:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Description: EC2 AMI ID
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
-  ClusterName:
+  MinSize:
     Type: String
-    Description: Amazon MSK Cluster Name
+    Description: Minimum number of app servers
+    Default: "1"
+
+  MaxSize:
+    Type: String
+    Description: Maximum number of app servers for spikes (Desired x 2)
+    Default: "4"
+
+  DesiredCapacity:
+    Type: String
+    Description: Capacity at normal operating loads
+    Default: "2"
 
   VpcCIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for this VPC
     Type: String
-    Default: 10.0.0.0/16
+    Default: 10.1.0.0/19
 
   PublicSubnet1CIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for the public subnet in the first Availability Zone
     Type: String
-    Default: 10.0.0.0/19
+    Default: 10.1.0.0/24
 
   PublicSubnet2CIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for the public subnet in the second Availability Zone
     Type: String
-    Default: 10.0.32.0/19
+    Default: 10.1.1.0/24
 
   PrivateSubnet1CIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for the private subnet in the first Availability Zone
     Type: String
-    Default: 10.0.64.0/19
+    Default: 10.1.2.0/24
 
   PrivateSubnet2CIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for the private subnet in the second Availability Zone
     Type: String
-    Default: 10.0.96.0/19
-
-  # Debugging (optional)
-
-  EnableBastionHost:
-    AllowedValues:
-      - "true"
-      - "false"
-    Default: "false"
-    Description: "if true it enables a bastion host for debugging"
-    Type: String
+    Default: 10.1.3.0/24
 
   KeyPair:
     Type: AWS::EC2::KeyPair::KeyName
-    Description: "EC2 Key Pair to allow SSH access to the bastion host"
-
-Conditions:
-  EnableBastionHost: !Equals
-    - !Ref EnableBastionHost
-    - "true"
-  MTLS: !Equals [ !Ref TLSMutualAuthentication, true ]
-  noMTLS: !Equals [ !Ref TLSMutualAuthentication, false ]
+    Description: "EC2 Key Pair to allow SSH access to the host"
 
 Resources:
   VPC:
@@ -171,88 +131,35 @@ Resources:
         - Key: Name
           Value: !Sub "${ProjectName} Private Subnet (AZ2)"
 
-  MSKClusterMTLS:
-    Type: AWS::MSK::Cluster
-    Condition: MTLS
-    Properties:
-      ClusterName: !Ref ClusterName
-      KafkaVersion: !Ref MSKKafkaVersion
-      NumberOfBrokerNodes: 2
-      EnhancedMonitoring: PER_TOPIC_PER_BROKER
-      EncryptionInfo:
-        EncryptionInTransit:
-          ClientBroker: TLS_PLAINTEXT
-          InCluster: true
-        ClientAuthentication:
-          Tls:
-            CertificateAuthorityArnList:
-              - !Ref PCAARN
-      OpenMonitoring:
-        Prometheus:
-          JmxExporter:
-            EnabledInBroker: "true"
-          NodeExporter:
-            EnabledInBroker: "true"
-      BrokerNodeGroupInfo:
-        BrokerAZDistribution: DEFAULT
-        InstanceType: !Ref MSKInstanceType
-        SecurityGroups:
-          - !Ref MSKSecurityGroup
-        StorageInfo:
-          EBSStorageInfo:
-            VolumeSize: 100
-        ClientSubnets:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
-
-  MSKClusterNoMTLS:
-    Type: AWS::MSK::Cluster
-    Condition: noMTLS
-    Properties:
-      ClusterName: !Ref ClusterName
-      KafkaVersion: !Ref MSKKafkaVersion
-      NumberOfBrokerNodes: 2
-      EnhancedMonitoring: PER_TOPIC_PER_BROKER
-      EncryptionInfo:
-        EncryptionInTransit:
-          ClientBroker: TLS_PLAINTEXT
-          InCluster: true
-      OpenMonitoring:
-        Prometheus:
-          JmxExporter:
-            EnabledInBroker: "true"
-          NodeExporter:
-            EnabledInBroker: "true"
-      BrokerNodeGroupInfo:
-        BrokerAZDistribution: DEFAULT
-        InstanceType: !Ref MSKInstanceType
-        SecurityGroups:
-          - !Ref MSKSecurityGroup
-        StorageInfo:
-          EBSStorageInfo:
-            VolumeSize: 100
-        ClientSubnets:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
-
-  MSKSecurityGroup:
+  BastionSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "Security group for the MSK Cluster"
+      GroupDescription: "Bastion SSH access"
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 2181
-          ToPort: 2181
-          CidrIp: !Ref VpcCIDR
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"
+
+  ClientGrpSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Http Access for the MSK Client Group Cluster"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 9094
-          ToPort: 9094
-          CidrIp: !Ref VpcCIDR
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: "0.0.0.0/0"
         - IpProtocol: tcp
-          FromPort: 9092
-          ToPort: 9092
-          CidrIp: !Ref VpcCIDR
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionSecurityGroup
 
   NatGateway1EIP:
     Type: AWS::EC2::EIP
@@ -348,30 +255,132 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable2
       SubnetId: !Ref PrivateSubnet2
 
+  AutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref DesiredCapacity
+        Timeout: "PT5M"
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+    Properties:
+      Cooldown: "300"
+      DesiredCapacity: !Ref DesiredCapacity
+      HealthCheckGracePeriod: "300"
+      HealthCheckType: ELB
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      LoadBalancerNames:
+        - !Ref ELB
+      MaxSize: !Ref MaxSize
+      MinSize: !Ref MinSize
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  LaunchConfiguration:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Properties:
+      ImageId: !Ref EC2Ami
+      InstanceType: t3.small
+      KeyName: !Ref KeyPair
+      SecurityGroups:
+        - !Ref ClientGrpSecurityGroup
+      UserData:
+        "Fn::Base64":
+          !Sub |
+          #!/bin/bash
+          yum update -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfiguration --configsets www --region ${AWS::Region}
+          cat > /etc/profile.d/load_env.sh << 'EOF'
+          export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk
+          EOF
+          yum -y update
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          www:
+            - "configure_cfn"
+            - "install_www"
+        configure_cfn:
+          files:
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.LaunchConfiguration.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfiguration --configsets www --region ${AWS::Region}
+              mode: "000400"
+              owner: root
+              group: root
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                verbose=true
+                interval=5
+              mode: "000400"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - "/etc/cfn/cfn-hup.conf"
+                  - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+        install_www:
+          packages:
+            yum:
+              java-1.8.0-openjdk-devel: []
+              httpd: []
+          files:
+            /var/www/html/index.html:
+              content: '<h1>Test Page OK</h1>'
+              mode: '000644'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              httpd:
+                enabled: "true"
+                ensureRunning: "true"
+
+  ELB:
+    Type: "AWS::ElasticLoadBalancing::LoadBalancer"
+    Properties:
+      CrossZone: true
+      Listeners:
+        - InstancePort: "8080"
+          InstanceProtocol: HTTP
+          LoadBalancerPort: "8080"
+          Protocol: HTTP
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: "2"
+        UnhealthyThreshold: "5"
+        Interval: "30"
+        Timeout: "5"
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ClientGrpSecurityGroup
+
   CloudMapNamespace:
     Type: AWS::ServiceDiscovery::PrivateDnsNamespace
     Properties:
       Name: !Sub "content.local"
       Vpc: !Ref VPC
 
-  BastionSecurityGroup:
-    Condition: EnableBastionHost
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: "Allows SSH access"
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
-
   Bastion:
-    Condition: EnableBastionHost
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref EC2Ami
-      InstanceType: t2.micro
+      InstanceType: t3.small
       KeyName: !Ref KeyPair
       SecurityGroupIds:
         - !Ref BastionSecurityGroup
@@ -382,73 +391,50 @@ Outputs:
     Description: A reference to the created VPC
     Value: !Ref VPC
     Export:
-      Name: !Sub
-        - "${ProjectName}:VPC"
-        - { ProjectName: !Ref ProjectName}
+      Name: !Sub "${ProjectName}:VPC"
 
   PublicSubnet1:
     Description: A reference to the public subnet in the 1st Availability Zone
     Value: !Ref PublicSubnet1
     Export:
-      Name: !Sub
-        - "${ProjectName}:PublicSubnet1"
-        - { ProjectName: !Ref ProjectName}
+      Name: !Sub "${ProjectName}:PublicSubnet1"
 
   PublicSubnet2:
     Description: A reference to the public subnet in the 2nd Availability Zone
     Value: !Ref PublicSubnet2
     Export:
-      Name: !Sub
-        - "${ProjectName}:PublicSubnet2"
-        - { ProjectName: !Ref ProjectName}
+      Name: !Sub "${ProjectName}:PublicSubnet2"
 
   PrivateSubnet1:
     Description: A reference to the private subnet in the 1st Availability Zone
     Value: !Ref PrivateSubnet1
     Export:
-      Name: !Sub
-        - "${ProjectName}:PrivateSubnet1"
-        - { ProjectName: !Ref ProjectName}
+      Name: !Sub "${ProjectName}:PrivateSubnet1"
 
   PrivateSubnet2:
     Description: A reference to the private subnet in the 2nd Availability Zone
     Value: !Ref PrivateSubnet2
     Export:
-      Name: !Sub
-        - "${ProjectName}:PrivateSubnet2"
-        - { ProjectName: !Ref ProjectName}
+      Name: !Sub "${ProjectName}:PrivateSubnet2"
 
   VpcCIDR:
     Description: VPC CIDR
     Value: !Ref VpcCIDR
     Export:
-      Name: !Sub
-        - "${ProjectName}:VpcCIDR"
-        - { ProjectName: !Ref ProjectName}
+      Name: !Sub "${ProjectName}:VpcCIDR"
 
   CloudMapNamespaceId:
     Description: The id of to the Cloud Map namespace
     Value: !GetAtt CloudMapNamespace.Id
     Export:
-      Name: !Sub
-        - "${ProjectName}:CloudMapNamespaceId"
-        - { ProjectName: !Ref ProjectName}
+      Name: !Sub "${ProjectName}:CloudMapNamespaceId"
 
-  BastionIp:
-    Condition: EnableBastionHost
-    Description: The ip address of the bastion host
-    Value: !GetAtt Bastion.PublicIp
-    Export:
-      Name: !Sub
-        - "${ProjectName}:BastionIp"
-        - { ProjectName: !Ref ProjectName}
-
-  MSKClusterArn:
-    Description: The Arn for the MSKMMCluster MSK cluster
-    Value: !Ref MSKCluster
-
-  MSKSecurityGroupID:
+  ClientGrpSecurityGroupID:
     Description: The ID of the security group created for the MSK clusters
     Value: !GetAtt
-      - MSKSecurityGroup
+      - ClientGrpSecurityGroup
       - GroupId
+
+  Endpoint:
+    Description: Application Address
+    Value: !Join ["", ["http://", !GetAtt ELB.DNSName, ":8080/msk"]]

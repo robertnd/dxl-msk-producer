@@ -1,0 +1,10 @@
+#Connection
+spring.kafka.properties.security.protocol=SSL
+
+#Producer
+spring.kafka.producer.client-id=<client-id>
+spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
+spring.kafka.producer.value-serializer=org.apache.kafka.common.serialization.StringSerializer
+
+#Topic
+listener.topic=<topic>
