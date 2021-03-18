@@ -1,0 +1,1 @@
+java -jar /home/ec2-user/dxl-msk-producer-1.0.0-SNAPSHOT.jar --spring.kafka.producer.bootstrap-servers=$1 --spring.kafka.admin.ssl.trust-store-password=<your-keystore-password> --spring.kafka.admin.ssl.trust-store-location=file:/home/ec2-user/mskClientKeystore.jks

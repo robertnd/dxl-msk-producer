@@ -4,9 +4,7 @@ Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
-          Detault: Debugging (optional)
           Parameters:
-            - EnableBastionHost
             - KeyPair
 
 Parameters:
@@ -48,24 +46,9 @@ Parameters:
     Type: String
     Default: 10.0.96.0/19
 
-  # Debugging (optional)
-
-  EnableBastionHost:
-    AllowedValues:
-      - "true"
-      - "false"
-    Default: "false"
-    Description: "if true it enables a bastion host for debugging"
-    Type: String
-
   KeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: "EC2 Key Pair to allow SSH access to the bastion host"
-
-Conditions:
-  EnableBastionHost: !Equals
-    - !Ref EnableBastionHost
-    - "true"
 
 Resources:
   VPC:
@@ -283,7 +266,6 @@ Resources:
       Vpc: !Ref VPC
 
   BastionSecurityGroup:
-    Condition: EnableBastionHost
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "Allows SSH access"
@@ -295,7 +277,6 @@ Resources:
           CidrIp: 0.0.0.0/0
 
   Bastion:
-    Condition: EnableBastionHost
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref EC2Ami
@@ -304,63 +285,86 @@ Resources:
       SecurityGroupIds:
         - !Ref BastionSecurityGroup
       SubnetId: !Ref PublicSubnet1
+      UserData:
+        "Fn::Base64":
+          !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install java-1.8.0-openjdk-devel -y
+          wget https://archive.apache.org/dist/kafka/2.2.1/kafka_2.12-2.2.1.tgz
+          tar -xzf kafka_2.12-2.2.1.tgz
 
 Outputs:
   VPC:
     Description: A reference to the created VPC
     Value: !Ref VPC
     Export:
-      Name: !Sub "${ProjectName}:VPC"
+      Name: !Sub "${AWS::StackName}:VPC"
 
   PublicSubnet1:
     Description: A reference to the public subnet in the 1st Availability Zone
     Value: !Ref PublicSubnet1
     Export:
-      Name: !Sub "${ProjectName}:PublicSubnet1"
+      Name: !Sub "${AWS::StackName}:PublicSubnet1"
 
   PublicSubnet2:
     Description: A reference to the public subnet in the 2nd Availability Zone
     Value: !Ref PublicSubnet2
     Export:
-      Name: !Sub "${ProjectName}:PublicSubnet2"
+      Name: !Sub "${AWS::StackName}:PublicSubnet2"
 
   PrivateSubnet1:
     Description: A reference to the private subnet in the 1st Availability Zone
     Value: !Ref PrivateSubnet1
     Export:
-      Name: !Sub "${ProjectName}:PrivateSubnet1"
+      Name: !Sub "${AWS::StackName}:PrivateSubnet1"
 
   PrivateSubnet2:
     Description: A reference to the private subnet in the 2nd Availability Zone
     Value: !Ref PrivateSubnet2
     Export:
-      Name: !Sub "${ProjectName}:PrivateSubnet2"
+      Name: !Sub "${AWS::StackName}:PrivateSubnet2"
+
+  PrivateRouteTable1:
+    Description: Private RouteTable in AZ1
+    Value: !Ref PrivateRouteTable1
+    Export:
+      Name: !Sub "${AWS::StackName}:PrivateRouteTable1"
+
+  PrivateRouteTable2:
+    Description: Private RouteTable in AZ2
+    Value: !Ref PrivateRouteTable2
+    Export:
+      Name: !Sub "${AWS::StackName}:PrivateRouteTable2"
 
   VpcCIDR:
     Description: VPC CIDR
     Value: !Ref VpcCIDR
     Export:
-      Name: !Sub "${ProjectName}:VpcCIDR"
+      Name: !Sub "${AWS::StackName}:VpcCIDR"
 
   CloudMapNamespaceId:
     Description: The id of to the Cloud Map namespace
     Value: !GetAtt CloudMapNamespace.Id
     Export:
-      Name: !Sub "${ProjectName}:CloudMapNamespaceId"
+      Name: !Sub "${AWS::StackName}:CloudMapNamespaceId"
 
   BastionIp:
-    Condition: EnableBastionHost
     Description: The ip address of the bastion host
     Value: !GetAtt Bastion.PublicIp
     Export:
-      Name: !Sub "${ProjectName}:BastionIp"
+      Name: !Sub "${AWS::StackName}:BastionIp"
 
   MSKClusterArn:
     Description: The Arn for the MSKMMCluster MSK cluster
     Value: !Ref MSKCluster
+    Export:
+      Name: !Sub "${AWS::StackName}:MSKClusterArn"
 
   MSKSecurityGroupID:
     Description: The ID of the security group created for the MSK clusters
     Value: !GetAtt
       - MSKSecurityGroup
       - GroupId
+    Export:
+      Name: !Sub "${AWS::StackName}:MSKSecurityGroupID"

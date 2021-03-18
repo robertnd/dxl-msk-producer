@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Resources for Managed Kafka Clients"
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "msk-client-resources-${AWS::AccountId}-${AWS::Region}"
+
+Outputs:
+
+  Bucket:
+    Description: "Bucket name"
+    Value: !Ref Bucket
+    Export:
+      Name: !Sub "${AWS::StackName}:Bucket"
+
+  BucketARN:
+    Description: "Bucket ARN"
+    Value: !Join ["", ["arn:aws:s3:::", !Ref Bucket, ""]]
+    Export:
+      Name: !Sub "${AWS::StackName}:BucketArn"

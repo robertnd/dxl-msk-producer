@@ -2,9 +2,9 @@ HELP.md
 target/
 policies/
 bkp/
-templates/MSKAPI.json
-templates/static_site.yml
-templates/MSKFlinkPrivate.yml
+templates/infra_msk_asg.yml
+
+
 src/main/resources/application.properties
 pom.xml
 mvnw
