@@ -3,8 +3,6 @@ target/
 policies/
 bkp/
 templates/infra_msk_asg.yml
-
-
 src/main/resources/application.properties
 pom.xml
 mvnw

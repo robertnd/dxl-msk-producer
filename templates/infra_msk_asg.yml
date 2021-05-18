@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "PoC Stack for Managed Kafka Clients"
+Description: "This template creates an Auto Scaling group for MSK producer clients"
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -14,6 +14,8 @@ Parameters:
   ProjectName:
     Type: String
     Description: Project Name
+    MinLength: 4
+    MaxLength: 50
 
   MSKStackName:
     Type: String
@@ -47,27 +49,27 @@ Parameters:
   VpcCIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for this VPC
     Type: String
-    Default: 10.1.0.0/19
+    Default: 172.32.12.0/22
 
   PublicSubnet1CIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for the public subnet in the first Availability Zone
     Type: String
-    Default: 10.1.0.0/24
+    Default: 172.32.12.0/26
 
   PublicSubnet2CIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for the public subnet in the second Availability Zone
     Type: String
-    Default: 10.1.1.0/24
+    Default: 172.32.13.0/26
 
   PrivateSubnet1CIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for the private subnet in the first Availability Zone
     Type: String
-    Default: 10.1.2.0/24
+    Default: 172.32.14.0/26
 
   PrivateSubnet2CIDR:
     Description: Please enter the CIDR IP range (*.*.*.*/*) for the private subnet in the second Availability Zone
     Type: String
-    Default: 10.1.3.0/24
+    Default: 172.32.15.0/26
 
   KeyPair:
     Type: AWS::EC2::KeyPair::KeyName
@@ -371,7 +373,7 @@ Resources:
           - Effect: Allow
             Principal:
               Service: [ec2.amazonaws.com]
-            Action: ['sts:AssumeRole']
+            Action: ["sts:AssumeRole"]
       Path: /
       Policies:
         - PolicyName: ec2-s3-access
@@ -380,7 +382,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:*
-                Resource: '*'
+                Resource: "*"
 
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -399,14 +401,13 @@ Resources:
         - !Ref ClientGrpSecurityGroup
       IamInstanceProfile: !Ref InstanceProfile
       UserData:
-        "Fn::Base64":
-          !Sub |
+        "Fn::Base64": !Sub |
           #!/bin/bash
           yum update -y aws-cfn-bootstrap
           /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfiguration --configsets www --region ${AWS::Region}
-          aws s3 cp s3://<your-resources-bucket>/dxl-msk-producer-1.0.0-SNAPSHOT.jar /home/ec2-user
-          aws s3 cp s3://<your-resources-bucket>/mskClientKeystore.jks /home/ec2-user
-          aws s3 cp s3://<your-resources-bucket>/runRestClient.sh /home/ec2-user
+          aws s3 cp s3://<bucket-name>/dxl-msk-producer-1.0.0-SNAPSHOT.jar /home/ec2-user
+          aws s3 cp s3://<bucket-name>/mskClientKeystore.jks /home/ec2-user
+          aws s3 cp s3://<bucket-name>/runRestClient.sh /home/ec2-user
           sudo chmod 777 runRestClient.sh
           cat > /etc/profile.d/load_env.sh << 'EOF'
           export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk
@@ -459,8 +460,8 @@ Resources:
               httpd: []
           files:
             /var/www/html/index.html:
-              content: '<h1>Test Page OK</h1>'
-              mode: '000644'
+              content: "<h1>Test Page OK</h1>"
+              mode: "000644"
               owner: root
               group: root
           services:
@@ -489,12 +490,6 @@ Resources:
         - !Ref PublicSubnet2
       SecurityGroups:
         - !Ref ClientGrpSecurityGroup
-
-  CloudMapNamespace:
-    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
-    Properties:
-      Name: !Sub "content.local"
-      Vpc: !Ref VPC
 
   Bastion:
     Type: AWS::EC2::Instance

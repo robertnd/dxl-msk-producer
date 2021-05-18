@@ -1,0 +1,273 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "This template creates an Auto Scaling group for MSK producer clients in the MSK VPC. No peering required"
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          Parameters:
+            - KeyPair
+            - MinSize
+            - MaxSize
+            - DesiredCapacity
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project Name
+    MinLength: 4
+    MaxLength: 50
+
+  MSKStackName:
+    Type: String
+    Description: MSK Cluster StackName
+
+  Brokers:
+    Type: String
+    Description: Comma separated list of brokers e.g (broker1:port,broker2:port)
+    AllowedPattern: ".+"
+
+  EC2Ami:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Description: EC2 AMI ID
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+
+  MinSize:
+    Type: String
+    Description: Minimum number of app servers
+    Default: "1"
+
+  MaxSize:
+    Type: String
+    Description: Maximum number of app servers for spikes (Desired x 2)
+    Default: "4"
+
+  DesiredCapacity:
+    Type: String
+    Description: Capacity at normal operating loads
+    Default: "2"
+
+  KeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: "EC2 Key Pair to allow SSH access to the host"
+
+Resources:
+  ClientGrpSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Http Access for the MSK Client Group Cluster"
+      VpcId:
+        Fn::ImportValue: !Sub "${MSKStackName}:VPC"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId:
+            Fn::ImportValue: !Sub "${MSKStackName}:BastionSecurityGroupID"
+
+  SecurityGroupIngress1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Ingress from the Client ASG
+      GroupId:
+        Fn::ImportValue: !Sub "${MSKStackName}:MSKSecurityGroupID"
+      IpProtocol: tcp
+      FromPort: 2181
+      ToPort: 2181
+      CidrIp:
+        Fn::ImportValue: !Sub "${MSKStackName}:VpcCIDR"
+
+  SecurityGroupIngress2:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Ingress from the Client ASG
+      GroupId:
+        Fn::ImportValue: !Sub "${MSKStackName}:MSKSecurityGroupID"
+      IpProtocol: tcp
+      FromPort: 9094
+      ToPort: 9094
+      CidrIp: !
+        Fn::ImportValue: !Sub "${MSKStackName}:VpcCIDR"
+
+  SecurityGroupIngress3:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Ingress from the Client ASG
+      GroupId:
+        Fn::ImportValue: !Sub "${MSKStackName}:MSKSecurityGroupID"
+      IpProtocol: tcp
+      FromPort: 9094
+      ToPort: 9094
+      CidrIp:
+        Fn::ImportValue: !Sub "${MSKStackName}:VpcCIDR"
+
+  AutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref DesiredCapacity
+        Timeout: "PT5M"
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+    Properties:
+      Cooldown: "300"
+      DesiredCapacity: !Ref DesiredCapacity
+      HealthCheckGracePeriod: "300"
+      HealthCheckType: ELB
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      LoadBalancerNames:
+        - !Ref ELB
+      MaxSize: !Ref MaxSize
+      MinSize: !Ref MinSize
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub "${MSKStackName}:PrivateSubnet1"
+        - Fn::ImportValue: !Sub "${MSKStackName}:PrivateSubnet2"
+
+  EC2SetupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: ["sts:AssumeRole"]
+      Path: /
+      Policies:
+        - PolicyName: ec2-s3-access
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: "*"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref EC2SetupRole
+
+  LaunchConfiguration:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Properties:
+      ImageId: !Ref EC2Ami
+      InstanceType: t3.small
+      KeyName: !Ref KeyPair
+      SecurityGroups:
+        - !Ref ClientGrpSecurityGroup
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash
+          yum update -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfiguration --configsets www --region ${AWS::Region}
+          aws s3 cp s3://<bucket-name>/dxl-msk-producer-1.0.0-SNAPSHOT.jar /home/ec2-user
+          aws s3 cp s3://<bucket-name>/mskClientKeystore.jks /home/ec2-user
+          aws s3 cp s3://<bucket-name>/runRestClient.sh /home/ec2-user
+          sudo chmod 777 runRestClient.sh
+          cat > /etc/profile.d/load_env.sh << 'EOF'
+          export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk
+          export BROKERS=${Brokers}
+          sudo nohup /home/ec2-user/runRestClient.sh ${Brokers} &
+          EOF
+          sudo chmod 777 /etc/profile.d/load_env.sh
+          yum -y update
+          sudo nohup /home/ec2-user/runRestClient.sh ${Brokers} &
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          www:
+            - "configure_cfn"
+            - "install_www"
+        configure_cfn:
+          files:
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.LaunchConfiguration.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfiguration --configsets www --region ${AWS::Region}
+              mode: "000400"
+              owner: root
+              group: root
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                verbose=true
+                interval=5
+              mode: "000400"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - "/etc/cfn/cfn-hup.conf"
+                  - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+        install_www:
+          packages:
+            yum:
+              java-1.8.0-openjdk-devel: []
+              httpd: []
+          files:
+            /var/www/html/index.html:
+              content: "<h1>Test Page OK</h1>"
+              mode: "000644"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              httpd:
+                enabled: "true"
+                ensureRunning: "true"
+
+  ELB:
+    Type: "AWS::ElasticLoadBalancing::LoadBalancer"
+    Properties:
+      CrossZone: true
+      Listeners:
+        - InstancePort: "8080"
+          InstanceProtocol: HTTP
+          LoadBalancerPort: "8080"
+          Protocol: HTTP
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: "2"
+        UnhealthyThreshold: "5"
+        Interval: "30"
+        Timeout: "5"
+      Subnets:
+        - Fn::ImportValue: !Sub "${MSKStackName}:PublicSubnet1"
+        - Fn::ImportValue: !Sub "${MSKStackName}:PublicSubnet2"
+      SecurityGroups:
+        - !Ref ClientGrpSecurityGroup
+
+Outputs:
+  ClientGrpSecurityGroupID:
+    Description: The ID of the security group created for the MSK clusters
+    Value: !GetAtt
+      - ClientGrpSecurityGroup
+      - GroupId
+    Export:
+      Name: !Sub "${AWS::StackName}:ClientGrpSecurityGroupID"
+
+  Endpoint:
+    Description: Application Address
+    Value: !Join ["", ["http://", !GetAtt ELB.DNSName, ":8080/msk"]]
+    Export:
+      Name: !Sub "${AWS::StackName}:Endpoint"

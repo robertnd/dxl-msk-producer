@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "PoC Stack for Managed Kafka Streaming"
+Description: "This template creates an MSK cluster with a bastion"
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -368,3 +368,11 @@ Outputs:
       - GroupId
     Export:
       Name: !Sub "${AWS::StackName}:MSKSecurityGroupID"
+
+  BastionSecurityGroupID:
+    Description: The ID of the security group created for the bastion
+    Value: !GetAtt
+      - BastionSecurityGroup
+      - GroupId
+    Export:
+      Name: !Sub "${AWS::StackName}:BastionSecurityGroupID"
